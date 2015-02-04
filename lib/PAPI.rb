@@ -1,1 +1,1 @@
-require 'PAPI/base.rb'
+require './PAPI/base.rb'
