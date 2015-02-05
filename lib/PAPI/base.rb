@@ -17,6 +17,7 @@ module PAPI
   OK = 0
 
   class Version
+    include Comparable
 
     def initialize( *vals )
       if( vals.length > 1 )
@@ -53,20 +54,26 @@ module PAPI
     end
 
     def to_s
-      return "#{major}.#{minor}.#{revision}"
+      return "#{major}.#{minor}.#{revision}.#{increment}"
     end
 
+    def <=>(v)
+      return self.to_int <=> v.to_int
+    end
   end
 
   def self.init
-    major = 5
-    9.downto(0) { |minor|
-      9.downto(0) { |revision|
-        v = Version::new(major, minor, revision)
-        res = PAPI_library_init(v)
-        if res == v.to_int then
-          return Version::new(res)
-        end
+    5.downto(3) { |major|
+      9.downto(0) { |minor|
+        9.downto(0) { |revision|
+          9.downto(0) { |increment|
+            v = Version::new(major, minor, revision, increment)
+            res = PAPI_library_init(v)
+            if res == v.to_int then
+              return Version::new(res)
+            end
+          }
+        }
       }
     }
     return nil
@@ -83,26 +90,54 @@ module PAPI
 
     MAX_PRESET_EVENTS = 128
 
+    attr_reader :info
+
+    def initialize(info)
+      @info = info
+    end
+
+    def to_i
+      @info[:event_code]
+    end
+
+    def to_s
+      @info[:symbol].to_ptr.read_string
+    end
+
     class Info < FFI::Struct
-      layout :event_code,      :uint,
-             :symbol,         [:char, HUGE_STR_LEN],
-             :short_descr,    [:char, MIN_STR_LEN],
-             :long_descr,     [:char, HUGE_STR_LEN],
-             :component_index, :int,
-             :units,          [:char, MIN_STR_LEN],
-             :location,        :int,
-             :data_type,       :int,
-             :value_type,      :int,
-             :timescope,       :int,
-             :update_type,     :int,
-             :update_freq,     :int,
-             :count,           :uint,
-             :event_type,      :uint,
-             :derived,        [:char, MIN_STR_LEN],
-             :postfix,        [:char, MAX_STR_LEN2],
-             :code,           [:int, MAX_INFO_TERMS],
-             :name,           [:char, MAX_INFO_TERMS*MAX_STR_LEN2],
-             :note,           [:char, HUGE_STR_LEN]
+      if VERSION >= Version::new(5,0,0,0) then
+        layout :event_code,      :uint,
+               :symbol,         [:char, HUGE_STR_LEN],
+               :short_descr,    [:char, MIN_STR_LEN],
+               :long_descr,     [:char, HUGE_STR_LEN],
+               :component_index, :int,
+               :units,          [:char, MIN_STR_LEN],
+               :location,        :int,
+               :data_type,       :int,
+               :value_type,      :int,
+               :timescope,       :int,
+               :update_type,     :int,
+               :update_freq,     :int,
+               :count,           :uint,
+               :event_type,      :uint,
+               :derived,        [:char, MIN_STR_LEN],
+               :postfix,        [:char, MAX_STR_LEN2],
+               :code,           [:int,  MAX_INFO_TERMS],
+               :name,           [:char, MAX_INFO_TERMS*MAX_STR_LEN2],
+               :note,           [:char, HUGE_STR_LEN]
+      else
+        layout :event_code,      :uint,
+               :event_type,      :uint,
+               :count,           :uint,
+               :symbol,         [:char, HUGE_STR_LEN],
+               :short_descr,    [:char, MIN_STR_LEN],
+               :long_descr,     [:char, HUGE_STR_LEN],
+               :derived,        [:char, MIN_STR_LEN],
+               :postfix,        [:char, MIN_STR_LEN],
+               :code,           [:int,  MAX_INFO_TERMS],
+               :name,           [:char, MAX_INFO_TERMS*MAX_STR_LEN2],
+               :note,           [:char, HUGE_STR_LEN]
+      end
     end
   end
 
@@ -143,14 +178,14 @@ module PAPI
     PAPI_enum_event(e_p, :enum_first)
     info = Event::Info::new
     e = PAPI_get_event_info( e_p.read_int, info )
-    PRESET_EVENTS.push(info)
+    PRESET_EVENTS.push(Event::new(info))
     while PAPI_enum_event(e_p, :preset_enum_avail) == OK do
       info = Event::Info::new
       e = PAPI_get_event_info( e_p.read_int, info )
-      PRESET_EVENTS.push(info)
+      PRESET_EVENTS.push(Event::new(info))
     end
-    PRESET_EVENTS.each { |info|
-      puts "#{info[:symbol].to_ptr.read_string}\t: 0x#{info[:event_code].to_s(16)}"
+    PRESET_EVENTS.each { |ev|
+      puts "#{ev}\t: 0x#{ev.to_i.to_s(16)}"
     }
   end
 
