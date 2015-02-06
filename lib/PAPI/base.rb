@@ -16,6 +16,8 @@ module PAPI
 
   OK = 0
 
+  PAPI_NULL = -1
+
   class Version
     include Comparable
 
@@ -82,6 +84,119 @@ module PAPI
   VERSION = self.init()
   puts "Found PAPI #{VERSION}"
 
+  class Error < StandardError
+    attr_reader :code
+
+    def initialize(code)
+      @code = code
+      super("#{code}")
+    end
+
+    #:stopdoc:
+    CLASSES = {}
+    #:startdoc:
+
+    private_constant :CLASSES
+
+    def self.error_class(errcode)
+      return CLASSES[errcode]
+    end
+
+    def self.name(code)
+      if CLASSES[code] then
+        return CLASSES[code].name
+      else
+        return "#{code}"
+      end
+    end
+
+    def name
+      return "#{@code}"
+    end
+
+    def self.register_error(code, symbol)
+      s = <<EOF
+      class #{symbol} < Error
+
+        def initialize
+          super(#{code})
+        end
+
+        def self.name
+          return "#{code}"
+        end
+
+        def name
+          return "#{code}"
+        end
+
+        def self.code
+          return #{code}
+        end
+
+      end
+      CLASSES[#{code}] = #{symbol}
+EOF
+      eval s
+    end
+    errors = []
+    errors.push([-1, "EINVAL"],    
+                [-2, "ENOMEM"],
+                [-3, "ESYS"])
+    if VERSION >= Version::new(5,0,0,0) then
+      errors.push [-4, "ECMP"]
+    else
+      errors.push [-4, "ESBSTR"]
+    end
+    errors.push([-5, "ECLOST"],
+                [-6, "EBUG"],
+                [-7, "ENOEVNT"],
+                [-8, "ECNFLCT"],
+                [-9, "ENOTRUN"],
+                [-10, "EISRUN"],
+                [-11, "ENOEVST"],
+                [-12, "ENOTPRESET"],
+                [-13, "ENOCNTR"],
+                [-14, "EMISC"],
+                [-15, "EPERM"],
+                [-16, "ENOINIT"])
+    if VERSION >= Version::new(4,2,0,0) then
+      errors.push([-17, "ENOCMP"],
+                  [-18, "ENOSUPP"],
+                  [-19, "ENOIMPL"],
+                  [-20, "EBUF"],
+                  [-21, "EINVAL_DOM"],
+                  [-22, "EATTR"],
+                  [-23, "ECOUNT"],
+                  [-24, "ECOMBO"])
+    elsif VERSION >= Version::new(4,1,0,0) then
+      errors.push([-17, "ENOCMP"],
+                  [-18, "ENOSUPP"],
+                  [-19, "ENOIMPL"],
+                  [-20, "EBUF"],
+                  [-21, "EINVAL_DOM"])
+    elsif VERSION >= Version::new(4,0,0,0) then
+      errors.push([-17, "EBUF"],
+                  [-18, "EINVAL_DOM"],
+                  [-19, "ENOCMP"])
+    else
+      errors.push([-17, "EBUF"],
+                  [-18, "EINVAL_DOM"])
+    end
+    errors.each  { |code, symbol| register_error(code, symbol) }
+
+  end
+
+  def self.error_check(errcode)
+      return nil if errcode >= OK
+      klass = Error::error_class(errcode)
+      if klass then
+        raise klass::new
+      else
+        raise Error::new("#{errcode}")
+      end
+  end
+
   class Event
     PRESET_MASK = 0x80000000
     NATIVE_MASK = 0x40000000
@@ -106,7 +221,7 @@ module PAPI
 
     class Info < FFI::Struct
       if VERSION >= Version::new(5,0,0,0) then
-        layout :event_code,      :uint,
+        layout :event_code,      :int,
                :symbol,         [:char, HUGE_STR_LEN],
                :short_descr,    [:char, MIN_STR_LEN],
                :long_descr,     [:char, HUGE_STR_LEN],
@@ -185,9 +300,70 @@ module PAPI
       PRESET_EVENTS.push(Event::new(info))
     end
     PRESET_EVENTS.each { |ev|
-      puts "#{ev}\t: 0x#{ev.to_i.to_s(16)}"
+      puts "#{ev}"
     }
   end
 
-  self.get_events_info
+  get_events_info
+
+  PRESET_EVENTS.each_index { |i|
+    s  = <<EOF
+  #{PRESET_EVENTS[i].to_s.gsub("PAPI_","")} = PRESET_EVENTS[#{i}]
+EOF
+    eval s
+  }
+
+  attach_function :PAPI_create_eventset, [:pointer], :int
+  attach_function :PAPI_add_event, [:int, :int], :int
+  attach_function :PAPI_remove_event, [:int, :int], :int
+
+  class EventSet
+
+
+    def initialize
+      number = FFI::MemoryPointer::new(:int)
+      number.write_int(PAPI_NULL)
+      error = PAPI::PAPI_create_eventset( number )
+      @number = number.read_int
+      PAPI::error_check(error)
+    end
+
+    def add( events )
+      evts = [events].flatten
+      evts.each { |ev|
+        error = PAPI::PAPI_add_event(@number, ev.to_i)
+        PAPI::error_check(error)
+      }
+    end
+
+    def remove( events )
+      evts = [events].flatten
+      evts.each { |ev|
+        error = PAPI::PAPI_remove_event(@number, ev.to_i)
+        PAPI::error_check(error)
+      }
+    end
+
+    def possible
+      list = []
+      PRESET_EVENTS.each { |event|
+        error = PAPI::PAPI_add_event(@number, event.to_i)
+        if( error >= OK ) then
+          error = PAPI::PAPI_remove_event(@number, event.to_i)
+          PAPI::error_check(error)
+          list.push event
+        end
+      }
+      return list
+    end
+
+  end
+
+  puts "-----------"
+
+  set = EventSet::new
+  set.add(L1_DCM)
+  set.add(L2_DCM)
+  puts set.possible
+  
 end
