@@ -286,6 +286,7 @@ EOF
   attach_function :PAPI_get_event_info, [:int, :papi_event_info_t], :int
 
   PRESET_EVENTS = []
+  PRESET_EVENTS_HASH = {}
 
   def self.get_events_info
     e_p = FFI::MemoryPointer::new(:uint)
@@ -293,11 +294,15 @@ EOF
     PAPI_enum_event(e_p, :enum_first)
     info = Event::Info::new
     e = PAPI_get_event_info( e_p.read_int, info )
-    PRESET_EVENTS.push(Event::new(info))
+    ev = Event::new(info)
+    PRESET_EVENTS.push(ev)
+    PRESET_EVENTS_HASH[ev.to_i] = ev
     while PAPI_enum_event(e_p, :preset_enum_avail) == OK do
       info = Event::Info::new
       e = PAPI_get_event_info( e_p.read_int, info )
-      PRESET_EVENTS.push(Event::new(info))
+      ev = Event::new(info)
+      PRESET_EVENTS.push(ev)
+      PRESET_EVENTS_HASH[ev.to_i] = ev
     end
     PRESET_EVENTS.each { |ev|
       puts "#{ev}"
@@ -313,9 +318,17 @@ EOF
     eval s
   }
 
+  typedef :int, :event_set
   attach_function :PAPI_create_eventset, [:pointer], :int
-  attach_function :PAPI_add_event, [:int, :int], :int
-  attach_function :PAPI_remove_event, [:int, :int], :int
+  attach_function :PAPI_add_event, [:event_set, :int], :int
+  attach_function :PAPI_remove_event, [:event_set, :int], :int
+  attach_function :PAPI_num_events, [:event_set], :int
+  attach_function :PAPI_list_events, [:event_set, :pointer, :pointer], :int
+  attach_function :PAPI_start, [:event_set], :int
+  attach_function :PAPI_stop, [:event_set, :pointer], :int
+  attach_function :PAPI_accum, [:event_set, :pointer], :int
+  attach_function :PAPI_read, [:event_set, :pointer], :int
+  attach_function :PAPI_read_ts, [:event_set, :pointer, :pointer], :int
 
   class EventSet
 
@@ -326,6 +339,7 @@ EOF
       error = PAPI::PAPI_create_eventset( number )
       @number = number.read_int
       PAPI::error_check(error)
+      @size = 0
     end
 
     def add( events )
@@ -334,6 +348,10 @@ EOF
         error = PAPI::PAPI_add_event(@number, ev.to_i)
         PAPI::error_check(error)
       }
+      error = PAPI::PAPI_num_events(@number)
+      PAPI::error_check(error)
+      @size = error
+      return self
     end
 
     def remove( events )
@@ -342,6 +360,10 @@ EOF
         error = PAPI::PAPI_remove_event(@number, ev.to_i)
         PAPI::error_check(error)
       }
+      error = PAPI::PAPI_num_events(@number)
+      PAPI::error_check(error)
+      @size = error
+      return self
     end
 
     def possible
@@ -357,6 +379,63 @@ EOF
       return list
     end
 
+    def size
+      return @size
+    end
+
+    alias length size
+    alias num_events size
+
+    def events
+      events_p = FFI::MemoryPointer::new(:int, @size)
+      size_p = FFI::MemoryPointer::new(:int)
+      size_p.write_int(@size)
+      error = PAPI::PAPI_list_events(@number, events_p, size_p)
+      PAPI::error_check(error)
+      evts = events_p.read_array_of_int(size_p.read_int)
+      return evts.collect { |code| PRESET_EVENTS_HASH[code] }
+    end
+
+    alias list_events events
+
+    def start
+      error = PAPI::PAPI_start(@number)
+      PAPI::error_check(error)
+      return self
+    end
+
+    def stop
+      values_p = FFI::MemoryPointer::new(:long_long, @size)
+      error = PAPI::PAPI_stop(@number, values_p)
+      PAPI::error_check(error)
+      return values_p.read_array_of_long_long(@size)
+    end
+
+    def accum(values)
+      values_p = FFI::MemoryPointer::new(:long_long, @size)
+      values_p.write_array_of_long_long(values)
+      error = PAPI::PAPI_accum(@number, values_p)
+      PAPI::error_check(error)
+      new_values = values_p.read_array_of_long_long(@size)
+      values.replace(new_values)
+      return self
+    end
+
+    def read
+      values_p = FFI::MemoryPointer::new(:long_long, @size)
+      error = PAPI::PAPI_read(@number, values_p)
+      PAPI::error_check(error)
+      return values_p.read_array_of_long_long(@size)
+    end
+
+    def read_ts
+      values_p = FFI::MemoryPointer::new(:long_long, @size)
+      ts_p = FFI::MemoryPointer::new(:long_long)
+      error = PAPI::PAPI_read_ts(@number, values_p, ts_p)
+      PAPI::error_check(error)
+      return [values_p.read_array_of_long_long(@size), ts_p.read_long_long]
+    end
+
   end
 
   puts "-----------"
@@ -365,5 +444,14 @@ EOF
   set.add(L1_DCM)
   set.add(L2_DCM)
   puts set.possible
+  set.start
+  puts vals = set.stop
+  set.start
+  set.accum(vals)
+  puts vals
+  puts set.stop
+  puts set.read
+  puts set.events
+  puts set.read_ts
   
 end
