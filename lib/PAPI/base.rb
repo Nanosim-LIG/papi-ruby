@@ -13,6 +13,7 @@ module PAPI
   MAX_STR_LEN2 = 256
   HUGE_STR_LEN = 1024
   MAX_INFO_TERMS = 12
+  PMU_MAX = 40
 
   OK = 0
 
@@ -317,6 +318,37 @@ EOF
 EOF
     eval s
   }
+
+  attach_function :PAPI_num_components, [:void], :int
+
+  COMPONENTS = []
+
+  class Component
+    class Info < FFI::Struct
+      layout :name,                   [:char, MAX_STR_LEN],
+             :short_name,             [:char, MIN_STR_LEN],
+             :description,            [:char, MAX_STR_LEN],
+             :version,                [:char, MIN_STR_LEN],
+             :support_version,        [:char, MIN_STR_LEN],
+             :kernel_version,         [:char, MIN_STR_LEN],
+             :disabled_reason,        [:char, MAX_STR_LEN],
+             :disabled,                :int,
+             :CmpIdx,                  :int,
+             :num_cntrs,               :int,
+             :num_mpx_cntrs,           :int,
+             :num_preset_events,       :int,
+             :num_native_events,       :int,
+             :default_domain,          :int,
+             :available_domains,       :int,
+             :default_granularity,     :int,
+             :available_granularities, :int,
+             :hardware_intr_sig,       :int,
+             :component_type,          :int,
+             :pmu_names,              [:pointer, PMU_MAX],
+             :reserved,               [:int, 8],
+             :bifield,                 :uint
+    end
+  end
 
   typedef :int, :event_set
   attach_function :PAPI_create_eventset, [:pointer], :int
