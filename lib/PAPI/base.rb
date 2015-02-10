@@ -6,7 +6,7 @@ module PAPI
 
   ffi_lib "libpapi.so"
   attach_function :PAPI_library_init, [ :int ], :int
-  attach_function :PAPI_shutdown, [ :void ], :void
+  attach_function :PAPI_shutdown, [ ], :void
 
   MIN_STR_LEN = 64
   MAX_STR_LEN = 128
@@ -124,11 +124,11 @@ module PAPI
         end
 
         def self.name
-          return "#{code}"
+          return "#{symbol}"
         end
 
         def name
-          return "#{code}"
+          return "#{symbol}"
         end
 
         def self.code
@@ -138,7 +138,6 @@ module PAPI
       end
       CLASSES[#{code}] = #{symbol}
 EOF
-      eval s
     end
     errors = []
     errors.push([-1, "EINVAL"],    
@@ -184,7 +183,7 @@ EOF
       errors.push([-17, "EBUF"],
                   [-18, "EINVAL_DOM"])
     end
-    errors.each  { |code, symbol| register_error(code, symbol) }
+    errors.each  { |code, symbol| eval register_error(code, symbol) }
 
   end
 
@@ -199,6 +198,12 @@ EOF
   end
 
   class Event
+    class Mask < Event
+      def initialize(info)
+        super(info,nil)
+      end       
+    end
+
     PRESET_MASK = 0x80000000
     NATIVE_MASK = 0x40000000
     PRESET_AND_MASK = 0x7FFFFFFF
@@ -207,17 +212,26 @@ EOF
     MAX_PRESET_EVENTS = 128
 
     attr_reader :info
+    attr_reader :masks
 
-    def initialize(info)
+    def initialize(info, masks = nil)
       @info = info
+      @masks = masks
     end
 
     def to_i
       @info[:event_code]
     end
 
-    def to_s
-      @info[:symbol].to_ptr.read_string
+    def to_s(description = false, masks = false)
+      s1 = @info[:symbol].to_ptr.read_string
+      s = "#{s1}"
+      s += "\n  #{@info[:long_descr]}" if description
+      if masks and @masks then
+        s += "\n    "
+        s += @masks.collect{ |m| m.to_s.gsub(s1.gsub(/.*::/,""),"")+"\n      " + m.info[:long_descr].to_ptr.read_string.gsub(/.*masks:/,"") }.join("\n    ")
+      end
+      return s
     end
 
     class Info < FFI::Struct
@@ -305,9 +319,7 @@ EOF
       PRESET_EVENTS.push(ev)
       PRESET_EVENTS_HASH[ev.to_i] = ev
     end
-    PRESET_EVENTS.each { |ev|
-      puts "#{ev}"
-    }
+    # PRESET_EVENTS.each { |ev| puts "#{ev.to_s(true)}" }
   end
 
   get_events_info
@@ -319,41 +331,166 @@ EOF
     eval s
   }
 
-  attach_function :PAPI_num_components, [:void], :int
+  if VERSION >= Version::new(4,0,0,0) then
+    attach_function :PAPI_num_components, [], :int
+    attach_function :PAPI_get_component_info, [:int], :pointer
+    attach_function :PAPI_enum_cmp_event, [:pointer, EventModifier, :int], :int 	
+  else
+    attach_function :PAPI_get_substrate_info, [], :pointer
+  end
 
   COMPONENTS = []
+  COMPONENTS_HASH = {}
 
   class Component
     class Info < FFI::Struct
-      layout :name,                   [:char, MAX_STR_LEN],
-             :short_name,             [:char, MIN_STR_LEN],
-             :description,            [:char, MAX_STR_LEN],
-             :version,                [:char, MIN_STR_LEN],
-             :support_version,        [:char, MIN_STR_LEN],
-             :kernel_version,         [:char, MIN_STR_LEN],
-             :disabled_reason,        [:char, MAX_STR_LEN],
-             :disabled,                :int,
-             :CmpIdx,                  :int,
-             :num_cntrs,               :int,
-             :num_mpx_cntrs,           :int,
-             :num_preset_events,       :int,
-             :num_native_events,       :int,
-             :default_domain,          :int,
-             :available_domains,       :int,
-             :default_granularity,     :int,
-             :available_granularities, :int,
-             :hardware_intr_sig,       :int,
-             :component_type,          :int,
-             :pmu_names,              [:pointer, PMU_MAX],
-             :reserved,               [:int, 8],
-             :bifield,                 :uint
+      lay = []
+      lay.push(:name,                   [:char, MAX_STR_LEN])
+      lay.push(:short_name,             [:char, MIN_STR_LEN],
+               :description,            [:char, MAX_STR_LEN]) if  VERSION >= Version::new(5,0,0,0)
+      lay.push(:version,                [:char, MIN_STR_LEN],
+               :support_version,        [:char, MIN_STR_LEN],
+               :kernel_version,         [:char, MIN_STR_LEN])
+      lay.push(:disabled_reason,        [:char, MAX_STR_LEN],
+               :disabled,                :int) if VERSION >= Version::new(5,0,0,0)
+      lay.push(:CmpIdx,                  :int) if VERSION >= Version::new(4,0,0,0)
+      lay.push(:num_cntrs,               :int,
+               :num_mpx_cntrs,           :int,
+               :num_preset_events,       :int,
+               :num_native_events,       :int,
+               :default_domain,          :int,
+               :available_domains,       :int,
+               :default_granularity,     :int,
+               :available_granularities, :int)
+      lay.push(:itimer_sig,              :int,
+               :itimer_num,              :int,
+               :itimer_ns,               :int,
+               :itimer_res_ns,           :int) if VERSION < Version::new(5,0,0,0)
+      lay.push(:hardware_intr_sig,       :int)
+      lay.push(:clock_ticks,             :int,
+               :opcode_match_width,      :int) if VERSION < Version::new(5,0,0,0)
+      lay.push(:component_type,          :int) if VERSION >= Version::new(5,0,0,0)
+      lay.push(:pmu_names,              [:pointer, PMU_MAX]) if VERSION >= Version::new(5,4,1,0)
+      lay.push(:reserved,               [:int, 8]) if VERSION >= Version::new(5,0,0,0)
+      lay.push(:os_version,              :int,
+               :reserved,               [:int, 1]) if VERSION < Version::new(5,0,0,0) and VERSION >= Version::new(4,1,1,0)
+      lay.push(:reserved,               [:int, 2]) if VERSION < Version::new(4,1,1,0)
+      lay.push(:bifield,                 :uint)
+
+      layout( *lay )
     end
+
+    attr_reader :info
+    attr_accessor :native
+    attr_accessor :preset
+
+    def initialize(info, idx = 0)
+      @info = info
+      @idx = idx
+    end
+
+    def to_i
+      return @idx
+    end
+
+    def to_s
+      @info[:name].to_ptr.read_string
+    end
+
   end
+
+  def self.get_mask_info( code, component )
+    m_p = FFI::MemoryPointer::new(:uint)
+    m_p.write_uint( code.read_uint )
+    if VERSION < Version::new(4,0,0,0) then
+      e = PAPI_enum_event( m_p, :ntv_enum_umasks )
+    else
+      e = PAPI_enum_cmp_event( m_p, :ntv_enum_umasks, component.to_i )
+    end
+    return nil if e != OK
+    info = Event::Info::new
+    e = PAPI_get_event_info( m_p.read_int, info )
+    if e == OK then
+      ev = Event::new(info)
+      masks = []
+      masks.push(ev)
+    end
+    while ( VERSION < Version::new(4,0,0,0) ? PAPI_enum_event(e_p, :ntv_enum_umasks) : PAPI_enum_cmp_event( m_p, :ntv_enum_umasks, component.to_i ) ) == OK do
+      info = Event::Info::new
+      e = PAPI_get_event_info( m_p.read_int, info )
+      next if e != OK
+      ev = Event::new(info)
+      masks = [] if not masks
+      masks.push(ev)
+    end
+    return masks
+  end
+
+  def self.get_native_events( component )
+    e_p = FFI::MemoryPointer::new(:uint)
+    e_p.write_uint(0 | Event::NATIVE_MASK)
+    if VERSION < Version::new(4,0,0,0) then
+      e = PAPI_enum_event(e_p, :enum_first)
+    else
+      e = PAPI_enum_cmp_event(e_p, :enum_first, component.to_i)
+    end
+    return if e != OK
+    info = Event::Info::new
+    e = PAPI_get_event_info( e_p.read_int, info )
+    if e == OK then
+      ev = Event::new(info, get_mask_info( e_p, component ))
+      component.native = []
+      component.native.push(ev)
+    end
+    while ( VERSION < Version::new(4,0,0,0) ? PAPI_enum_event(e_p, :enum_events) : PAPI_enum_cmp_event(e_p, :enum_events, component.to_i) ) == OK do
+      info = Event::Info::new
+      e = PAPI_get_event_info( e_p.read_int, info )
+      next if e != OK
+      ev = Event::new(info, get_mask_info( e_p, component ) )
+      component.native = [] if not component.native
+      component.native.push(ev)
+    end
+
+    puts "-----------"
+    puts "#{component}: #{component.to_i}"
+    puts component.native.length
+    #component.native.each { |evt| puts evt.to_s(true, true) }
+  end
+
+  def self.get_components_info
+    puts "-----------"
+    if VERSION < Version::new(4,0,0,0) then
+      info_p = PAPI_get_substrate_info()
+      COMPONENTS.push( Component::new(Component::Info::new(info_p)))
+      COMPONENTS_HASH[0] = COMPONENTS[0]
+    else
+      (0...PAPI_num_components()).each { |cid|
+        info_p = PAPI_get_component_info(cid)
+        info = Component::Info::new(info_p)
+        if VERSION >= Version::new(5,0,0,0) and info[:disabled] != 0 then
+          puts "#{info[:name].to_ptr.read_string}: #{info[:disabled_reason].to_ptr.read_string}"
+        else
+          COMPONENTS.push( Component::new(info, cid) )
+          COMPONENTS_HASH[cid] = COMPONENTS.last
+        end
+      }
+    end
+    if COMPONENTS.length > 0 then
+      COMPONENTS[0].preset = PRESET_EVENTS
+    end
+    COMPONENTS.each { |c|
+      get_native_events( c )
+    }
+  end
+
+  get_components_info
 
   typedef :int, :event_set
   attach_function :PAPI_create_eventset, [:pointer], :int
   attach_function :PAPI_add_event, [:event_set, :int], :int
+  attach_function :PAPI_add_named_event, [:event_set, :string], :int
   attach_function :PAPI_remove_event, [:event_set, :int], :int
+  attach_function :PAPI_remove_named_event, [:event_set, :string], :int
   attach_function :PAPI_num_events, [:event_set], :int
   attach_function :PAPI_list_events, [:event_set, :pointer, :pointer], :int
   attach_function :PAPI_start, [:event_set], :int
@@ -361,6 +498,8 @@ EOF
   attach_function :PAPI_accum, [:event_set, :pointer], :int
   attach_function :PAPI_read, [:event_set, :pointer], :int
   attach_function :PAPI_read_ts, [:event_set, :pointer, :pointer], :int
+  attach_function :PAPI_assign_eventset_component, [:event_set, :int], :int
+  attach_function :PAPI_get_eventset_component, [:event_set], :int
 
   class EventSet
 
@@ -372,6 +511,12 @@ EOF
       @number = number.read_int
       PAPI::error_check(error)
       @size = 0
+    end
+
+    def assign_component(component)
+      error = PAPI::PAPI_assign_eventset_component( @number, component.to_i )
+      PAPI::error_check(error)
+      return self
     end
 
     def add( events )
@@ -398,14 +543,54 @@ EOF
       return self
     end
 
-    def possible
+    def possible(preset = true)
+      cid = nil
+      begin
+        e = PAPI::PAPI_get_eventset_component(@number)
+        PAPI::error_check(e)
+        cid = e
+      rescue
+        cid = 0
+      end
       list = []
-      PRESET_EVENTS.each { |event|
+      if preset and COMPONENTS[cid].preset then
+        events = COMPONENTS[cid].preset
+      else
+        events = COMPONENTS[cid].native
+      end
+      events.each { |event|
         error = PAPI::PAPI_add_event(@number, event.to_i)
         if( error >= OK ) then
           error = PAPI::PAPI_remove_event(@number, event.to_i)
           PAPI::error_check(error)
           list.push event
+        elsif event.masks then
+          event.masks.each { |mask|
+            error = PAPI::PAPI_add_named_event(@number, mask.info[:symbol])
+            if( error >= OK ) then
+              error = PAPI::PAPI_remove_named_event(@number, mask.info[:symbol])
+              PAPI::error_check(error)
+              list.push event
+              break
+            end
+          }
+          event.masks.each { |mask|
+            error = PAPI::PAPI_add_named_event(@number, mask.info[:symbol].to_ptr.read_string+":cpu=1")
+            if( error >= OK ) then
+              error = PAPI::PAPI_remove_named_event(@number, mask.info[:symbol].to_ptr.read_string+":cpu=1")
+              PAPI::error_check(error)
+              list.push event
+              break
+            end
+          }
+        else
+          puts (event.info[:symbol].to_ptr.read_string+":PACKAGE0").gsub(/.*::/,"")
+          error = PAPI::PAPI_add_named_event(@number, (event.info[:symbol].to_ptr.read_string+":PACKAGE0").gsub(/.*::/,""))
+          if( error >= OK ) then
+            error = PAPI::PAPI_remove_named_event(@number, (event.info[:symbol].to_ptr.read_string+":PACKAGE0").gsub(/.*::/,""))
+            PAPI::error_check(error)
+            list.push event
+          end
         end
       }
       return list
@@ -471,8 +656,9 @@ EOF
   end
 
   puts "-----------"
-
   set = EventSet::new
+  puts set.possible
+  puts "-----------"
   set.add(L1_DCM)
   set.add(L2_DCM)
   puts set.possible
@@ -485,5 +671,15 @@ EOF
   puts set.read
   puts set.events
   puts set.read_ts
+  puts "-----------"
+  set = EventSet::new
+  puts set.possible(false).length
+  if COMPONENTS.length > 1 then
+    puts "-----------"
+    set = EventSet::new
+    set.assign_component(COMPONENTS[1])
+    puts COMPONENTS[1].native
+    puts set.possible(false)
+  end
   
 end
