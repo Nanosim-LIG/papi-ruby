@@ -531,10 +531,34 @@ EOF
       return self
     end
 
+    def add_named(events)
+      evts = [events].flatten
+      evts.each { |ev|
+        error = PAPI::PAPI_add_named_event(@number, ev.to_s)
+        PAPI::error_check(error)
+      }
+      error = PAPI::PAPI_num_events(@number)
+      PAPI::error_check(error)
+      @size = error
+      return self
+    end
+
     def remove( events )
       evts = [events].flatten
       evts.each { |ev|
         error = PAPI::PAPI_remove_event(@number, ev.to_i)
+        PAPI::error_check(error)
+      }
+      error = PAPI::PAPI_num_events(@number)
+      PAPI::error_check(error)
+      @size = error
+      return self
+    end
+
+    def remove_named( events )
+      evts = [events].flatten
+      evts.each { |ev|
+        error = PAPI::PAPI_remove_named_event(@number, ev.to_s)
         PAPI::error_check(error)
       }
       error = PAPI::PAPI_num_events(@number)
@@ -584,10 +608,9 @@ EOF
             end
           }
         else
-          puts (event.info[:symbol].to_ptr.read_string+":PACKAGE0").gsub(/.*::/,"")
-          error = PAPI::PAPI_add_named_event(@number, (event.info[:symbol].to_ptr.read_string+":PACKAGE0").gsub(/.*::/,""))
+          error = PAPI::PAPI_add_named_event(@number, (event.info[:symbol].to_ptr.read_string+":cpu=1").gsub(/.*::/,""))
           if( error >= OK ) then
-            error = PAPI::PAPI_remove_named_event(@number, (event.info[:symbol].to_ptr.read_string+":PACKAGE0").gsub(/.*::/,""))
+            error = PAPI::PAPI_remove_named_event(@number, (event.info[:symbol].to_ptr.read_string+":cpu=1").gsub(/.*::/,""))
             PAPI::error_check(error)
             list.push event
           end
@@ -660,7 +683,7 @@ EOF
   puts set.possible
   puts "-----------"
   set.add(L1_DCM)
-  set.add(L2_DCM)
+  set.add_named("PAPI_L2_DCM")
   puts set.possible
   set.start
   puts vals = set.stop
@@ -678,7 +701,6 @@ EOF
     puts "-----------"
     set = EventSet::new
     set.assign_component(COMPONENTS[1])
-    puts COMPONENTS[1].native
     puts set.possible(false)
   end
   
