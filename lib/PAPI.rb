@@ -1,1 +1,5 @@
-require './PAPI/base.rb'
+require 'PAPI/Version.rb'
+require 'PAPI/Error.rb'
+require 'PAPI/Event.rb'
+require 'PAPI/Component.rb'
+require 'PAPI/EventSet.rb'
