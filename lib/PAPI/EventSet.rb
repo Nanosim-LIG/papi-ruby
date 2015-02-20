@@ -2,6 +2,8 @@ module PAPI
 
   typedef :int, :event_set
   attach_function :PAPI_create_eventset, [:pointer], :int
+  attach_function :PAPI_cleanup_eventset, [:event_set], :int
+  attach_function :PAPI_destroy_eventset, [:pointer], :int
   attach_function :PAPI_add_event, [:event_set, :int], :int
   attach_function :PAPI_add_named_event, [:event_set, :string], :int
   attach_function :PAPI_remove_event, [:event_set, :int], :int
@@ -25,6 +27,21 @@ module PAPI
       @number = number.read_int
       PAPI::error_check(error)
       @size = 0
+    end
+
+    def cleanup
+      error = PAPI::PAPI_cleanup_eventset( @number )
+      PAPI::error_check(error)
+      return self
+    end
+
+    def destroy
+      number = FFI::MemoryPointer::new(:int)
+      number.write_int(@number)
+      error = PAPI::PAPI_destroy_eventset( number )
+      @number = number.read_int
+      PAPI::error_check(error)
+      return self
     end
 
     def assign_component(component)
