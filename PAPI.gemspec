@@ -10,5 +10,5 @@ Gem::Specification.new do |s|
   s.has_rdoc = true
   s.license = 'BSD'
   s.required_ruby_version = '>= 1.9.3'
-  s.add_dependency 'ffi', '>=1.9.3'
+  s.add_dependency 'ffi', '~> 1.9', '>=1.9.3'
 end
