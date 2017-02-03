@@ -108,6 +108,7 @@ module PAPI
         cid = 0
       end
       list = []
+      return nil unless COMPONENTS[cid]
       if preset and COMPONENTS[cid].preset then
         events = COMPONENTS[cid].preset
       else
