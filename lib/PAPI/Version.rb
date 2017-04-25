@@ -71,23 +71,6 @@ module PAPI
     return nil
   end
 
-  def self.init
-    5.downto(3) { |major|
-      9.downto(0) { |minor|
-        9.downto(0) { |revision|
-          9.downto(0) { |increment|
-            v = Version::new(major, minor, revision, increment)
-            res = PAPI_library_init(v)
-            if res == v.to_int then
-              return Version::new(res)
-            end
-          }
-        }
-      }
-    }
-    return nil
-  end
-
   VERSION = self.init()
 
 end
