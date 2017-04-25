@@ -4,7 +4,7 @@ module PAPI
 
   extend FFI::Library
 
-  ffi_lib "libpapi.so"
+  ffi_lib "papi"
   attach_function :PAPI_library_init, [ :int ], :int
   attach_function :PAPI_shutdown, [ ], :void
 
