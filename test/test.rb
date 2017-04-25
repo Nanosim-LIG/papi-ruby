@@ -1,3 +1,4 @@
+[ '../lib', 'lib' ].each { |d| $:.unshift(d) if File::directory?(d) }
 require 'PAPI'
 
 puts "Found PAPI #{PAPI::VERSION}"
@@ -19,7 +20,7 @@ puts set.events
 puts set.read_ts
 puts "-----------"
 set = PAPI::EventSet::new
-puts set.possible(false).length
+puts set.possible(false)
 if PAPI::COMPONENTS.length > 1 then
   puts "-----------"
   set = PAPI::EventSet::new
