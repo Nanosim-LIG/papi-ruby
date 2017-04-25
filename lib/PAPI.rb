@@ -1,5 +1,6 @@
 require 'PAPI/Version.rb'
 require 'PAPI/Error.rb'
+require 'PAPI/Thread.rb'
 require 'PAPI/Event.rb'
 require 'PAPI/Component.rb'
 require 'PAPI/EventSet.rb'
