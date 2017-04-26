@@ -39,7 +39,6 @@ module PAPI
       number = FFI::MemoryPointer::new(:int)
       number.write_int(@number)
       error = PAPI::PAPI_destroy_eventset( number )
-      @number = number.read_int
       PAPI::error_check(error)
       return self
     end

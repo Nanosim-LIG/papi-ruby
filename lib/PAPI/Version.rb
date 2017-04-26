@@ -71,6 +71,11 @@ module PAPI
     return nil
   end
 
+  def self.shutdown
+    PAPI_shutdown()
+    return self
+  end
+
   VERSION = self.init()
 
 end
