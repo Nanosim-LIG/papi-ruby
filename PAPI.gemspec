@@ -1,6 +1,6 @@
 Gem::Specification.new do |s|
   s.name = 'PAPI'
-  s.version = "0.101"
+  s.version = "1.0.0"
   s.author = "Brice Videau"
   s.email = "brice.videau@imag.fr"
   s.homepage = "https://github.com/Nanosim-LIG/papi-ruby"
