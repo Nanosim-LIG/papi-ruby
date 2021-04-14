@@ -84,6 +84,9 @@ EOF
                   [-22, "EATTR"],
                   [-23, "ECOUNT"],
                   [-24, "ECOMBO"])
+      if VERSION >= Version::new(5,7,0,0) then
+        errors.push([-25, "ECMP_DISABLED"])
+      end
     elsif VERSION >= Version::new(4,1,0,0) then
       errors.push([-17, "ENOCMP"],
                   [-18, "ENOSUPP"],

@@ -55,7 +55,7 @@ module PAPI
   end
 
   def self.init
-    5.downto(3) { |major|
+    6.downto(3) { |major|
       9.downto(0) { |minor|
         9.downto(0) { |revision|
           9.downto(0) { |increment|
